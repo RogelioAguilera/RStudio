@@ -1,0 +1,233 @@
+---
+title: "Classification Tree"
+author: "Rogelio Aguilera Barberena"
+date: "11/01/2023"
+output: html_document
+---
+
+# Starter code for German credit scoring
+
+Refer to http://archive.ics.uci.edu/ml/datasets/Statlog+(German+Credit+Data)) for variable description. The response variable is `Class` and all others are predictors.
+
+Only run the following code once to install the package `caret`. The `German credit scoring` data in provided in that package.
+
+```{r, eval=FALSE}
+install.packages('caret')
+install.packages('rpart.plot')
+```
+
+
+# Task1: Data Preparation
+
+### 1. Load the caret package and the GermanCredit dataset.
+
+```{r}
+library(caret) #this package contains the german data with its numeric format
+data(GermanCredit)
+GermanCredit$Class <-  as.numeric(GermanCredit$Class == "Good") # use this code to convert `Class` into True or False (equivalent to 1 or 0)
+str(GermanCredit)
+```
+
+```{r}
+#This is an optional code that drop variables that provide no information in the data
+GermanCredit = GermanCredit[,-c(14,19,27,30,35,40,44,45,48,52,55,58,62)]
+```
+
+### 2. Explore the dataset to understand its structure.
+
+Summary helps us visualize the data, and the basic distribution of the values stored within the variables.
+```{r}
+summary(GermanCredit)
+
+```
+```{r}
+colSums(is.na(GermanCredit))
+```
+Now, we check the de distribution of the variable we are analyzing.
+```{r}
+ggplot(GermanCredit, aes(x = GermanCredit$Class)) +
+  geom_bar(stat = "count", fill = "blue", alpha = 0.7) +
+  ggtitle("Distribution class of credit (GOOD= TRUE, BAD= FALSE)") +
+  xlab("Month") +
+  ylab("Class")
+```
+
+
+We check for outliers in the variable.
+```{r, fig.width=10, fig.height=4}
+boxplot(GermanCredit, las =2, cex.axis=0.7 )
+```
+The most noticeable variable with outliers is "Amount", we will take a closer look to the summary of its statistics, but will not make any changes at the moment.
+```{r}
+summary(GermanCredit$Amount)
+```
+
+Most of the variables in the German Credit data set could be changed into boolean, with some exceptions. Finally, there is one variable with tremendous outliers, that I think could be important, so I decided to keep them as they are for the time being, but if needed in the next steps I will handle them appropriately. 
+
+
+### 3. Split the dataset into *training* and *test set*. Using the random seed as `2023` for reproducibility.
+
+```{r}
+set.seed(2023)
+index <- sample(1:nrow(GermanCredit),nrow(GermanCredit)*0.60)
+training.data <- GermanCredit[index,]
+test.data <- GermanCredit[-index,]
+```
+
+
+# Task 2: Tree model without weighted class cost
+
+### 1. Fit a Tree model using the *training set*.
+
+```{r}
+library(rpart)
+library(rpart.plot)
+fit_tree <- rpart(as.factor(training.data$Class) ~ ., data=training.data)
+```
+We set the value of class, as factor for the classification tree, and the training data set for the model. 
+
+### 2. Use the *training set* to get prediected classes.
+
+```{r}
+pred_credit_train <- predict(fit_tree, training.data, type="class")
+```
+We predict the training data based on the fit_tree model with a type class and is stored in predict_credit_train.
+
+### 3. Obtain confusion matrix and MR on *training set*. 
+
+```{r}
+Cmatrix_train = table(true = training.data$Class,
+                      pred = pred_credit_train)
+Cmatrix_train
+```
+```{r}
+MR<-1 - sum(diag(Cmatrix_train))/sum(Cmatrix_train)
+MR
+```
+
+The true negatives, and true positives are larger than the false negatives and false positives. Also the miss classification rate has relatively low value at 0.1816. 
+
+
+### 4. Use the *testing set* to get prediected classes.
+
+```{r}
+pred_credit_test <- predict(fit_tree, test.data, type="class")
+```
+
+Your observation: We now predict the testing data using the same tree model.
+
+### 5. Obtain confusion matrix and MR on *testing set*. 
+
+```{r}
+Cmatrix_test = table(true = test.data$Class,
+                     pred = pred_credit_test)
+Cmatrix_test
+```
+```{r}
+MR<-1 - sum(diag(Cmatrix_test))/sum(Cmatrix_test)
+MR
+```
+For the test model the rate of false negatives is higher than the rates of false negatives than false positives. Although, there are a lot more of true positives, which might indicate that the model is predicting true at an alarming level.
+
+# Task 3: Tree model with weighted class cost
+
+### 1. Fit a Tree model using the *training set* with weight of 2 on FP and weight of 1 on FN. Please use all variables, but make sure the variable types are right.
+
+```{r}
+cost_matrix <- matrix(c(0, 2,  
+                        1, 0),  
+                      byrow = TRUE, nrow = 2)
+fit_tree_asym <- rpart(as.factor(training.data$Class) ~ ., data=training.data, 
+                       parms = list(loss = cost_matrix))
+rpart.plot(fit_tree_asym,extra=4, yesno=2)
+```
+
+The solution for the problem described above. Weighing the data more towards false positives will balance the data.
+
+### 2. Use the *training set* to get prediected probabilities and classes.
+
+```{r}
+pred_train_asym <- predict(fit_tree_asym, training.data, type="class")
+```
+
+Tree model for the asymmetric data
+
+
+
+### 3.Confusion matrix and MR on *training set*  
+
+```{r}
+Cmatrix_train_asym = table(true = training.data$Class,
+                      pred = pred_train_asym)
+Cmatrix_train_asym
+```
+```{r}
+MR<-1 - sum(diag(Cmatrix_train_asym))/sum(Cmatrix_train_asym)
+MR
+```
+
+Your observation: The MR for the testing set got a little bit worse, but it is not alarming.
+
+### 4. ROC and AUC on *training set* (. 
+
+```{r}
+pred_prob_train = predict(fit_tree_asym, training.data, type = "prob")
+pred_prob_train = pred_prob_train[,"1"] 
+```
+
+
+```{r out.width = '50%', fig.align = 'center'}
+library(ROCR)
+pred <- prediction(pred_prob_train, training.data$Class)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=TRUE)
+```
+
+```{r}
+unlist(slot(performance(pred, "auc"), "y.values"))
+
+```
+
+The AUC shows that the model is predicting the data well.
+
+
+### 5. Using the *testing set* to get prediected probabilities and classes.
+
+```{r}
+pred_test_asym <- predict(fit_tree_asym, test.data, type="class")
+```
+
+From the new model for asymmetric data, we are trying to predict the testing data.
+
+### 6. Confusion matrix and MR on *testing set*.  (use predicted classes). 
+
+```{r}
+Cmatrix_test_asym = table(true = test.data$Class,
+                      pred = pred_test_asym)
+Cmatrix_test_asym
+```
+```{r}
+MR<-1 - sum(diag(Cmatrix_test_asym))/sum(Cmatrix_test_asym)
+MR
+```
+
+Although the MR is greater, the rate of true negatives improved, and the rate of true positives stayed similar.
+### 7. ROC and AUC on *testing set*. (use predicted probabilities). 
+
+```{r}
+pred_prob_test = predict(fit_tree, test.data, type = "prob")
+pred_prob_test = pred_prob_test[,"1"]
+pred <- prediction(pred_prob_test, test.data$Class)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=TRUE)
+```
+```{r}
+unlist(slot(performance(pred, "auc"), "y.values"))
+
+```
+Your observation: The AUC indicates that the model is worse predicting the class variable than the weighted one.
+
+
+
+
+

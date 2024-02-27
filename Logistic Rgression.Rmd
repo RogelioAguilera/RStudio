@@ -1,0 +1,293 @@
+---
+title: "Logistic Rgression"
+author: "Rogelio Aguilera"
+date: "10/10/2023"
+output: html_document
+---
+
+# Starter code for German credit scoring
+
+Refer to http://archive.ics.uci.edu/ml/datasets/Statlog+(German+Credit+Data)) for variable description. The response variable is `Class` and all others are predictors.
+
+Only run the following code once to install the package `caret`. The `German credit scoring` data in provided in that package.
+
+```{r, eval=FALSE}
+install.packages('caret')
+```
+
+
+# Task1: Data Preparation
+
+### 1. Load the caret package and the GermanCredit dataset.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+library(caret) #this package contains the german data with its numeric format
+data(GermanCredit)
+GermanCredit$Class <-  GermanCredit$Class == "Good" # use this code to convert `Class` into True or False (equivalent to 1 or 0)
+str(GermanCredit)
+```
+Most of the variables appear to be boolean, the values can only be either 0 or 1 for most of them and we need to change the datavtypes to treat the variables accordingly.
+
+
+
+
+### 2. Explore the dataset to understand its structure.
+
+Summary helps us visualize the data, and the basic distribution of the values stored within the variables.
+```{r}
+summary(GermanCredit)
+```
+```{r}
+colSums(is.na(GermanCredit))
+```
+Now, we check the de distribution of the variable we are analyzing.
+```{r}
+ggplot(GermanCredit, aes(x = GermanCredit$Class)) +
+  geom_bar(stat = "count", fill = "blue", alpha = 0.7) +
+  ggtitle("Distribution class of credit (GOOD= TRUE, BAD= FALSE)") +
+  xlab("Month") +
+  ylab("Class")
+```
+
+We see that there are more Trues for the variable class than falses, but what is the proportion?
+
+We check for outlier in the variable.
+```{r, fig.width=10, fig.height=4}
+boxplot(GermanCredit, las =2, cex.axis=0.7 )
+```
+Th most noticeable variable with outliers is "Amount", we will take a closer look to the summary of its statistics, but will not make any changes at the moment.
+```{r}
+summary(GermanCredit$Amount)
+```
+The distribution the German Credit class was about 70% for good credit and 30% for bad credit. I also noticed that most of the variables in the German Credit data set could be changed into boolean, with some exceptions. Finally, there is one variable with tremendous outliers, that I think could be important, so I decided to keep them as they are for the time being, but if needed in the next steps I will handle them appropriately.
+
+
+### 3. Split the dataset into *training* and *test set*. Using the random seed as `2023` for reproducibility.
+
+```{r}
+set.seed(2023)
+index <- sample(1:nrow(GermanCredit),nrow(GermanCredit)*0.80)
+GermanCrdt.train = GermanCredit[index,]
+GermanCrdt.test = GermanCredit[-index,]
+```
+
+
+# Task 2: Model Fitting
+```{r}
+for (column in names(GermanCredit)[-1]) {
+  if (all(levels(GermanCredit[[column]]) == "1")) {
+    GermanCredit[[column]] <- as.logical(GermanCredit[[column]])
+  }
+}
+GermanCredit$InstallmentRatePercentage<- as.factor(GermanCredit$InstallmentRatePercentage)
+GermanCredit$ResidenceDuration<- as.factor(GermanCredit$ResidenceDuration)
+GermanCredit$NumberExistingCredits<- as.factor(GermanCredit$NumberExistingCredits)
+GermanCredit$NumberPeopleMaintenance<- as.factor(GermanCredit$NumberPeopleMaintenance)
+GermanCredit$Class<- as.factor(GermanCredit$Class)
+```
+```{r}
+str(GermanCredit)
+summary(GermanCredit)
+```
+
+### 1. Logistic regression model using the *training set*.
+
+```{r, warning=FALSE}
+set.seed(2023)
+index <- sample(1:nrow(GermanCredit), nrow(GermanCredit) * 0.80)
+GermanCrdt.train <- GermanCredit[index, ]
+GermanCrdt.test <- GermanCredit[-index, ]
+
+GermanCrdt_GLM.train <- glm(Class ~ ., family = binomial, data = GermanCrdt.train)
+GermanCrdt_GLM.test <- glm(Class ~ ., family = binomial, data = GermanCrdt.test)
+```
+Your observation: I made a simple logistic regression with the, but instead of using lm(), I used glm() because of the family option that lets the program know the variable is binomial
+
+### 2. Summarizing the model.
+
+```{r}
+summary(GermanCrdt_GLM.train)
+```
+
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1 is what caught my attention the most.
+They test the level of significance of the predictors when the p values are 0.001, 0.01, 0.05, and 0.1. The model appears to be more significant the smaller the p value, because the smaller the number on the significant code is the more accurate the prediction is.
+
+# Task 3: Optimal Probability Cut-off, with weight0 = 1 and weight1 = ### 1.
+
+### 1. Use the *training set* to predict probabilities.
+
+```{r}
+pred.glm.train.GerCred <- predict(GermanCrdt_GLM.train, type="response")
+hist(pred.glm.train.GerCred)
+```
+```{r}
+table(predict(GermanCrdt_GLM.train, type="response") > 0.5)
+table(predict(GermanCrdt_GLM.train, type="response") > 0.2)
+table(predict(GermanCrdt_GLM.train, type="response") > 0.1)
+```
+The values vary a lot between true and false depending on the prediction coefficient.
+
+### 2. Optimal probability cut-off point using the MR (misclassification rate) or equivalently the equal-weight cost.
+
+```{r}
+costfunc = function(obs, pred.p, pcut){
+	weight1 = 1  
+	weight0 = 1  
+	c1 = (obs==1)&(pred.p<pcut)    
+	c0 = (obs==0)&(pred.p>=pcut)   
+	cost = mean(weight1*c1 + weight0*c0)  
+	return(cost) 
+} 
+p.seq = seq(0.01, 1, 0.01) 
+cost = rep(0, length(p.seq))[0]  
+for(i in 1:length(p.seq)){ 
+	cost[i] = costfunc(obs = GermanCrdt.train$Class, pred.p = pred.glm.train.GerCred, pcut = p.seq[i])  
+}
+
+pcut = p.seq[which(cost==min(cost))]
+print(pcut) 
+```
+In the class work, we also used mean as a pcut value, in this instance, what I found the most interesting is that the pcut value is so different than the mean.
+
+
+# Task 4: Model Evaluation
+
+### 1. Using the optimal probability cut-off point obtained in 3.2, generate confusion matrix and obtain MR for the the *training set*.
+
+```{r}
+# get binary prediction
+class.glm.train.GC<- (pred.glm.train.GerCred>pcut)*1
+# get confusion matrix
+table(GermanCrdt.train$Class, class.glm.train.GC, dnn = c("True", "Predicted"))
+```
+```{r}
+MR<- mean(GermanCrdt.train$Class!=class.glm.train.GC) 
+# False positive rate
+FPR <- sum((GermanCrdt.train$Class == 0 & class.glm.train.GC == 1) / sum(GermanCrdt.train$Class == 0)) 
+
+# False negative rate
+FNR <- sum((GermanCrdt.train$Class == 1 & class.glm.train.GC == 0) / sum(GermanCrdt.train$Class == 1)) 
+
+cat("FPR:", FPR, "FNR:", FNR, "MR", MR, "\n")
+
+```
+
+The False positive rate is tremendously high. More than half of the positive variables have a false positive.
+
+### 2. Using the optimal probability cut-off point obtained in ### 3.2, generate the ROC curve and calculate the AUC for the *training set*.
+
+```{r}
+library(ROCR)
+pred <- prediction(pred.glm.train.GerCred, GermanCrdt.train$Class)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=TRUE)
+#Get the AUC
+unlist(slot(performance(pred, "auc"), "y.values"))
+
+```
+
+The AUC of the ROC curve for the training data suggest that the model strongly predicts the values of the class data.
+
+### 3. Using the same cut-off point, generate confusion matrix and obtain MR for the *test set*.
+
+```{r}
+pred.glm.test.GerCred1 <- predict(GermanCrdt_GLM.test, newdata = GermanCrdt.test, type="response")
+```
+```{r}
+class.glm.test.GC<- (pred.glm.test.GerCred1>pcut)*1
+table(GermanCrdt.test$Class, class.glm.test.GC, dnn = c("True", "Predicted"))
+```
+```{r}
+MR<- mean(GermanCrdt.test$Class!=class.glm.test.GC) 
+# False positive rate
+FPR <- sum((GermanCrdt.test$Class == 0 & class.glm.test.GC == 1) / sum(GermanCrdt.test$Class == 0)) 
+
+# False negative rate
+FNR <- sum((GermanCrdt.test$Class == 1 & class.glm.test.GC == 0) / sum(GermanCrdt.test$Class == 1)) 
+
+cat("FPR:", FPR, "FNR:", FNR, "MR", MR, "\n")
+
+```
+
+The false positive rate severely decreases for the training data.
+
+### 4. Using the same cut-off point, generate the ROC curve and calculate the AUC for the *test set*.
+
+```{r}
+pred <- prediction(pred.glm.test.GerCred1, GermanCrdt.test$Class)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=TRUE)
+#Get the AUC
+unlist(slot(performance(pred, "auc"), "y.values"))
+```
+
+Although the rate of false positives is lower compared to the values in training data, the AUC suggests that this model is less strongly correlated. This can be seen when comparing both of the correlation matrix. In the training data set, the true negatives have a better proportion in the training data 119/242 against the 26/58 for the testing data set. In a similar manner, the true positives are 521/538 for training vs 136/142 for testing.
+
+# Task 5: Using different weights
+
+Now, let's assume "It is worse to class a customer as good when they are bad (weight = 5), than it is to class a customer as bad when they are good (weight = 1)." 
+
+### 1. Optimal probability cut-off point again, with the new weights.
+
+```{r}
+costfunc = function(obs, pred.p, pcut){
+	weight1 = 1   
+	weight0 = 5    
+	c1 = (obs==1)&(pred.p<pcut)    
+	c0 = (obs==0)&(pred.p>=pcut)   
+	cost = mean(weight1*c1 + weight0*c0)  
+	return(cost) 
+} 
+p.seq = seq(0.01, 1, 0.01) 
+cost = rep(0, length(p.seq))  
+for(i in 1:length(p.seq)){ 
+	cost[i] = costfunc(obs = GermanCrdt.train$Class, pred.p = pred.glm.train.GerCred, pcut = p.seq[i])  
+}
+plot(p.seq, cost)
+# find the optimal pcut
+optimal.pcut = p.seq[which(cost==min(cost))]
+print(optimal.pcut)
+```
+
+By increasing the weight of the variable, the pcut point almost doubled. The value now, is much closer to the true mean of the data set for the class variable, which is 0.7.
+
+### 2. Confusion matrix and MR for the *training set*.
+
+
+```{r}
+# get binary prediction
+class.glm.train.GC2<- (pred.glm.train.GerCred>optimal.pcut)*1
+# get confusion matrix
+table(GermanCrdt.train$Class, class.glm.train.GC, dnn = c("True", "Predicted"))
+```
+```{r}
+MR<- mean(GermanCrdt.train$Class!=class.glm.train.GC2) 
+MR
+```
+
+Now we have a majority of true negatives, and true positives in the confusion matrix. The values predicted are being a lot better for the true negatives and a little bit worse for the true positives, but better prediction overall.
+
+### 3. Confusion matrix and MR for the *test set*.
+
+
+```{r}
+# get binary prediction
+class.glm.test.GC2<- (pred.glm.test.GerCred1>optimal.pcut)*1
+# get confusion matrix
+table(GermanCrdt.test$Class, class.glm.test.GC, dnn = c("True", "Predicted"))
+```
+```{r}
+MR<- mean(GermanCrdt.test$Class!=class.glm.test.GC2) 
+MR
+```
+
+
+# Report
+
+Summarize your findings, including the optimal probability cut-off, MR and AUC (if calculated) for both in-sample and out-of-sample data.
+Discuss what you observed and make some suggestions on how can we improve the model.
+
+The model overall improved very much during the progression of this report.
+The values in the confusion matrices clearly show that the model was improving severely from every minor adjustment.
+The equally weighted values for false positives and false negatives worked very well with the data as showed by their AUCs.
+One minor adjustment I would make to produce the best approximation of the values in the class column of the data set, would be to try different weights for the variables to see which weight fits the data more. This is because we got the best model for the ratio 1-5, but there maybe is a better ratio to predict the data.

@@ -1,0 +1,244 @@
+---
+title: "Support Vecctor Machine"
+author:  "Rogelio Aguilera Barberena"
+date: "10/22/2023"
+output: html_document
+---
+
+# Starter code for German credit scoring
+
+Refer to http://archive.ics.uci.edu/ml/datasets/Statlog+(German+Credit+Data)) for variable description. The response variable is `Class` and all others are predictors.
+
+Only run the following code once to install the package `caret`. The `German credit scoring` data in provided in that package.
+
+```{r, eval=FALSE}
+install.packages('caret')
+```
+
+
+# Task1: Data Preparation
+
+### 1. Loading the caret package and the GermanCredit dataset.
+
+```{r}
+library(caret) #this package contains the german data with its numeric format
+data(GermanCredit)
+GermanCredit$Class <-  as.numeric(GermanCredit$Class == "Good") # use this code to convert `Class` into True or False (equivalent to 1 or 0)
+GermanCredit$Class <- as.factor(GermanCredit$Class) #make sure `Class` is a factor as SVM require a factor response
+str(GermanCredit)
+```
+There are a lots of values that appear to be binomial variables
+
+
+```{r}
+GermanCredit = GermanCredit[,-c(14,19,27,30,35,40,44,45,48,52,55,58,62)]
+head(GermanCredit)
+
+```
+
+### 2. Exploring the dataset to understand its structure.
+
+Summary helps us visualize the data, and the basic distribution of the values stored within the variables.
+```{r}
+summary(GermanCredit)
+
+```
+```{r}
+#Check for any missing values
+colSums(is.na(GermanCredit))
+```
+Now, we check the de distribution of the variable we are analyzing.
+```{r}
+ggplot(GermanCredit, aes(x = GermanCredit$Class)) +
+  geom_bar(stat = "count", fill = "blue", alpha = 0.7) +
+  ggtitle("Distribution class of credit (GOOD= TRUE, BAD= FALSE)") +
+  xlab("Month") +
+  ylab("Class")
+```
+
+
+We check for outliers in the variable.
+```{r, fig.width=10, fig.height=4}
+boxplot(GermanCredit, las =2, cex.axis=0.7 )
+```
+Th most noticeable variable with outliers is "Amount", we will take a closer look to the summary of its statistics, but will not make any changes at the moment.
+```{r}
+summary(GermanCredit$Amount)
+```
+
+I noticed that most of the variables in the German Credit data set could be changed into boolean, with some exceptions. Finally, there is one variable with tremendous outliers, that I think could be important, so I decided to keep them as they are for the time being, but if needed in the next steps I will handle them appropriately.
+
+
+### 3. Splitting the dataset into *training* and *test set*. Using random seed as `2023` for reproducibility.
+```{r}
+library(e1071)
+```
+
+```{r}
+#Separating the traning and the testing sets into an 80/20 split
+set.seed(2023)
+index <- sample(1:nrow(GermanCredit),nrow(GermanCredit)*0.80)
+training.data <- GermanCredit[index,]
+test.data <- GermanCredit[-index,]
+```
+
+
+# Task 2: SVM without weighted class cost
+
+### 1. SVM model using the *training set*. 
+
+```{r}
+training.data$Class <- factor(training.data$Class)
+Ger.credit.svm = svm(Class ~ ., data = training.data, kernel = 'linear')
+summary(Ger.credit.svm)
+```
+
+There are 418 support vectors, 201 are 0 and 217 are 1. Everything else is an input, no added cost and linear classification.
+
+### 2. *training set* to get prediected classes.
+
+```{r}
+pred_class_train <- predict(Ger.credit.svm, training.data)
+```
+
+Takes the svm of the training data and applies it to itself.
+
+### 3. Confusion matrix and MR on *training set*. 
+
+```{r}
+Cnfsn_mtrix_trn = table(true = training.data$Class,
+                      pred = pred_class_train)
+Cnfsn_mtrix_trn
+```
+Missclassification rate of the training data:
+```{r}
+MR<- 1 - sum(diag(Cnfsn_mtrix_trn))/sum(Cnfsn_mtrix_trn)
+MR
+```
+
+There is a good number of true positives 490/558 and true negatives 142/242. This is clearly reflected in the low number in the MR.
+
+
+### 4. *testing set* to get prediected classes.
+
+```{r}
+pred_class_test <- predict(Ger.credit.svm, test.data)
+```
+
+
+### 5. Confusion matrix and MR on *testing set*. 
+
+```{r}
+Cnfsn_mtrix_tst = table(true = test.data$Class, pred = pred_class_test)
+Cnfsn_mtrix_tst
+```
+Missclassification rate of the test data:
+```{r}
+MR<- 1 - sum(diag(Cnfsn_mtrix_tst))/sum(Cnfsn_mtrix_tst)
+MR
+```
+Not as good of a confusion matrix with only 118/142 true positives and 32/58 true negatives, which caught my attention. Overall, a good fit of the model since the MR got just a little bit lower, the model is still effective predicting the class variable.
+
+# Task 3: SVM with weighted class cost, and probabilities enabled
+
+### 1. Fit a SVM model using the *training set* with weight of 2 on "1" and weight of 1 on "0". Please use all variables, but make sure the variable types are right.
+
+```{r}
+Ger.credit.svm_asymmetric = svm(Class ~ .,
+                            data = training.data, 
+                            kernel = 'linear',
+                            class.weights = c("0" = 1, "1" = 2),
+                            probability = TRUE)
+
+```
+The new SVM model contains a weight of 2 for the value of 1 and a 1 for the value of 0.
+
+### 2. Use the *training set* to get prediected probabilities and classes.
+
+```{r}
+pred_class_train_a <- predict(Ger.credit.svm_asymmetric,
+                          newdata = training.data,
+                          probability = TRUE)
+```
+Prediction for the asymmetric smv with the training dataset.
+
+### 3. Obtain confusion matrix and MR on *training set*  
+
+```{r}
+table( true = training.data$Class, pred = pred_class_train_a)
+```
+```{r}
+MR<-1 - sum(diag(Cnfsn_mtrix_tst))/sum(Cnfsn_mtrix_tst)
+MR
+```
+Despite having an ok MR, the confusion matrix suggest that it is predicting too many true values, thus the high false positive cases.
+
+### 4. Obtain ROC and AUC on *training set*  
+
+```{r}
+str(pred_class_train_a)
+
+pred_class_train_a = attr(pred_class_train_a, "probabilities")[, 2] 
+
+```
+```{r}
+library(ROCR)
+pred <- prediction(pred_class_train_a, training.data$Class)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=TRUE)
+```
+# Obtain AUC for training data
+
+```{r}
+#Get the AUC
+unlist(slot(performance(pred, "auc"), "y.values"))
+
+```
+The AUC indicates a good fit of the model using the predicted probabilities for the training dataset.
+
+
+### 5. Use the *testing set* to get prediected probabilities and classes.
+
+```{r}
+pred_class_test_a = predict(Ger.credit.svm_asymmetric,
+                         newdata = test.data,
+                         probability = TRUE)
+```
+
+### 6. Obtain confusion matrix and MR on *testing set*.  
+
+```{r}
+table( true = test.data$Class, pred = pred_class_test_a)
+```
+```{r}
+1 - sum(diag(Cnfsn_mtrix_tst))/sum(Cnfsn_mtrix_tst)
+```
+
+The false negatives are still higher than the true negatives. Yet, it is at a lower rate.
+
+### 7. Obtain ROC and AUC on *testing set*.  
+```{r}
+str(pred_class_test_a)
+
+pred_class_test_a = attr(pred_class_test_a, "probabilities")[, 2]
+```
+
+```{r}
+#ROC
+pred <- prediction(pred_class_test_a, test.data$Class)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=TRUE)
+```
+```{r}
+#Get the AUC
+unlist(slot(performance(pred, "auc"), "y.values"))
+
+```
+The AUC shows that the svm with the weighted values is statistically significant to the data set. The value is a little bit on the lower side of good, but a good fit overall.
+
+
+# Task 4: Report
+ 
+Since the MR of both testing data sets is the same, my conclusion is that the un-weighted model fits the data better due to the values on the confusion matrices. The values on the weighted data had alarming false positive rates compared to the un-weighted. Yet, both models showed to be good predictors for the Class variable in the GermanCredit data.
+
+
